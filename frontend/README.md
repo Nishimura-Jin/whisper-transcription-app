@@ -1,16 +1,49 @@
-# React + Vite
+# 🎙️ Whisper 文字起こしアプリ
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## 概要
+音声ファイルをアップロードすると自動で文字起こしを行うWebアプリです。
+フィラー除去・複数フォーマットのダウンロードに対応しています。
 
-Currently, two official plugins are available:
+## 使用技術
+| カテゴリ | 技術 |
+|------|------|
+| バックエンド | FastAPI / Python |
+| フロントエンド | React / Vite |
+| 文字起こし | OpenAI Whisper |
+| DB | PostgreSQL |
+| インフラ | Docker / Docker Compose |
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 機能一覧
+- 音声ファイルアップロード（mp3・mp4・wav・m4a・flac・ogg・webm）
+- Whisperによる日本語文字起こし（非同期処理）
+- フィラー除去ON/OFF（えー・あの・なんか 等）
+- 履歴一覧・再閲覧
+- TXT・SRT・VTT・TSV・JSON形式でのダウンロード
 
-## React Compiler
+## 画面キャプチャ
+（スクリーンショットをここに貼る）
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## セットアップ・起動方法
+### 前提条件
+- Docker Desktop がインストール済みであること
 
-## Expanding the ESLint configuration
+### 手順
+​```bash
+git clone https://github.com/Nishimura-Jin/whisper-transcription-app.git
+cd whisper-transcription-app
+cp .env.example .env  # 環境変数を設定
+docker-compose up -d
+​```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+ブラウザで http://localhost:5173 を開く
+
+## 環境変数
+`.env.example` を参考に `.env` を作成してください。
+
+## 工夫した点・技術的ポイント
+- Whisper処理をThreadPoolExecutorで非同期化し、APIがブロックされない設計にした
+- モデルを起動時に一度だけロードすることで処理の高速化を図った
+- フィラー除去は正規表現で実装し、ON/OFFをDBで管理している
+
+## 今後の予定
+- 話者分離（pyannote.audio）の実装

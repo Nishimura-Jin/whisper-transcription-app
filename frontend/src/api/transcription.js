@@ -27,3 +27,13 @@ export const downloadTranscription = (id, format, useFillerRemoved = false) => {
     `${BASE_URL}/transcriptions/${id}/download?format=${format}&use_filler_removed=${useFillerRemoved}`
   );
 };
+
+// フィラー除去ON/OFFを切り替え
+export const toggleFiller = async (id, enabled) => {
+  const res = await fetch(`${BASE_URL}/transcriptions/${id}/filler`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filler_removal_enabled: enabled }),
+  });
+  return res.json();
+};
