@@ -1,6 +1,5 @@
 import os
-from fastapi.responses import Response
-from app.services.download_service import to_txt, to_tsv, to_srt, to_vtt, to_json
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -11,11 +10,15 @@ from fastapi import (
     HTTPException,
     BackgroundTasks,
 )
+from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
 from app.db.database import get_db
 from app.models.transcription import Transcription
 from app.schemas.transcription import TranscriptionResponse
-from app.services.whisper_service import transcribe_audio
+from app.services.whisper_service import transcribe_audio, remove_fillers
+from app.services.download_service import to_txt, to_tsv, to_srt, to_vtt, to_json
 
 router = APIRouter()
 
@@ -23,6 +26,18 @@ UPLOAD_DIR = "/tmp/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".mp3", ".mp4", ".wav", ".m4a", ".flac", ".ogg", ".webm"}
+
+FORMAT_MAP = {
+    "txt": ("text/plain", to_txt),
+    "tsv": ("text/tab-separated-values", to_tsv),
+    "srt": ("text/srt", to_srt),
+    "vtt": ("text/vtt", to_vtt),
+    "json": ("application/json", None),
+}
+
+
+class FillerToggleRequest(BaseModel):
+    filler_removal_enabled: bool
 
 
 @router.post("/transcriptions", response_model=TranscriptionResponse)
@@ -32,12 +47,10 @@ async def upload_audio(
     filler_removal_enabled: bool = Form(False),
     db: Session = Depends(get_db),
 ):
-    # 拡張子チェック
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"非対応の形式です: {ext}")
 
-    # DBレコード作成（pending状態）
     record = Transcription(
         filename=file.filename,
         filler_removal_enabled=filler_removal_enabled,
@@ -47,13 +60,11 @@ async def upload_audio(
     db.commit()
     db.refresh(record)
 
-    # ファイル保存
     save_path = os.path.join(UPLOAD_DIR, f"{record.id}{ext}")
     with open(save_path, "wb") as f:
         content = await file.read()
         f.write(content)
 
-    # バックグラウンドで文字起こし実行
     background_tasks.add_task(
         transcribe_audio,
         record_id=record.id,
@@ -61,16 +72,6 @@ async def upload_audio(
         filler_removal_enabled=filler_removal_enabled,
     )
 
-    return record
-
-
-@router.get("/transcriptions/{transcription_id}", response_model=TranscriptionResponse)
-def get_transcription(transcription_id: int, db: Session = Depends(get_db)):
-    record = (
-        db.query(Transcription).filter(Transcription.id == transcription_id).first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="レコードが見つかりません")
     return record
 
 
@@ -86,13 +87,22 @@ def get_transcriptions(skip: int = 0, limit: int = 20, db: Session = Depends(get
     return records
 
 
-from app.services.whisper_service import remove_fillers
+@router.get("/transcriptions/{transcription_id}", response_model=TranscriptionResponse)
+def get_transcription(transcription_id: int, db: Session = Depends(get_db)):
+    record = (
+        db.query(Transcription).filter(Transcription.id == transcription_id).first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="レコードが見つかりません")
+    return record
 
 
 @router.patch(
     "/transcriptions/{transcription_id}/filler", response_model=TranscriptionResponse
 )
-def toggle_filler(transcription_id: int, enabled: bool, db: Session = Depends(get_db)):
+def toggle_filler(
+    transcription_id: int, body: FillerToggleRequest, db: Session = Depends(get_db)
+):
     record = (
         db.query(Transcription).filter(Transcription.id == transcription_id).first()
     )
@@ -103,8 +113,8 @@ def toggle_filler(transcription_id: int, enabled: bool, db: Session = Depends(ge
             status_code=400, detail="文字起こし完了後に操作してください"
         )
 
-    record.filler_removal_enabled = enabled
-    if enabled:
+    record.filler_removal_enabled = body.filler_removal_enabled
+    if body.filler_removal_enabled:
         record.filler_removed = remove_fillers(record.transcript)
     else:
         record.filler_removed = None
@@ -112,15 +122,6 @@ def toggle_filler(transcription_id: int, enabled: bool, db: Session = Depends(ge
     db.commit()
     db.refresh(record)
     return record
-
-
-FORMAT_MAP = {
-    "txt": ("text/plain", to_txt),
-    "tsv": ("text/tab-separated-values", to_tsv),
-    "srt": ("text/srt", to_srt),
-    "vtt": ("text/vtt", to_vtt),
-    "json": ("application/json", None),
-}
 
 
 @router.get("/transcriptions/{transcription_id}/download")
@@ -156,8 +157,6 @@ def download_transcription(
         content = to_json(text, record.filename)
     else:
         content = converter(text)
-
-    from urllib.parse import quote
 
     filename = f"{record.filename}.{format}"
     encoded_filename = quote(filename)
