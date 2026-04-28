@@ -1,23 +1,8 @@
 import os
 from urllib.parse import quote
-
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    Form,
-    UploadFile,
-    HTTPException,
-    BackgroundTasks,
-)
+from fastapi import APIRouter, File, Form, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import Response
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-
-from app.db.database import get_db
-from app.models.transcription import Transcription
-from app.schemas.transcription import TranscriptionResponse
-from app.services.whisper_service import transcribe_audio, remove_fillers
+from app.services.whisper_service import transcribe_audio
 from app.services.download_service import to_txt, to_tsv, to_srt, to_vtt, to_json
 
 router = APIRouter()
@@ -35,130 +20,99 @@ FORMAT_MAP = {
     "json": ("application/json", None),
 }
 
+# 処理結果を一時保存する辞書
+transcription_store = {}
+transcription_status = {}
 
-class FillerToggleRequest(BaseModel):
-    filler_removal_enabled: bool
+
+def _do_transcribe(job_id: str, file_path: str, filler_removal_enabled: bool):
+    try:
+        transcription_status[job_id] = "processing"
+        result = transcribe_audio(file_path, filler_removal_enabled)
+        transcription_store[job_id] = result
+        transcription_status[job_id] = "completed"
+        print(f"[SUCCESS] job_id={job_id} completed")
+    except Exception as e:
+        print(f"[ERROR] transcription failed: {e}")
+        transcription_status[job_id] = "failed"
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
-@router.post("/transcriptions", response_model=TranscriptionResponse)
+@router.post("/transcriptions")
 async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     filler_removal_enabled: bool = Form(False),
-    db: Session = Depends(get_db),
 ):
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"非対応の形式です: {ext}")
 
-    record = Transcription(
-        filename=file.filename,
-        filler_removal_enabled=filler_removal_enabled,
-        status="pending",
-    )
-    db.add(record)
-    db.commit()
-    db.refresh(record)
+    import uuid
 
-    save_path = os.path.join(UPLOAD_DIR, f"{record.id}{ext}")
+    job_id = str(uuid.uuid4())
+    save_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+
     with open(save_path, "wb") as f:
         content = await file.read()
         f.write(content)
 
+    transcription_status[job_id] = "pending"
     background_tasks.add_task(
-        transcribe_audio,
-        record_id=record.id,
+        _do_transcribe,
+        job_id=job_id,
         file_path=save_path,
         filler_removal_enabled=filler_removal_enabled,
     )
 
-    return record
+    return {"job_id": job_id, "status": "pending", "filename": file.filename}
 
 
-@router.get("/transcriptions", response_model=list[TranscriptionResponse])
-def get_transcriptions(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
-    records = (
-        db.query(Transcription)
-        .order_by(Transcription.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
-    return records
+@router.get("/transcriptions/{job_id}")
+def get_transcription(job_id: str):
+    status = transcription_status.get(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません")
+
+    result = transcription_store.get(job_id)
+    return {
+        "job_id": job_id,
+        "status": status,
+        "transcript": result["transcript"] if result else None,
+        "segments": result["segments"] if result else None,
+    }
 
 
-@router.get("/transcriptions/{transcription_id}", response_model=TranscriptionResponse)
-def get_transcription(transcription_id: int, db: Session = Depends(get_db)):
-    record = (
-        db.query(Transcription).filter(Transcription.id == transcription_id).first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="レコードが見つかりません")
-    return record
-
-
-@router.patch(
-    "/transcriptions/{transcription_id}/filler", response_model=TranscriptionResponse
-)
-def toggle_filler(
-    transcription_id: int, body: FillerToggleRequest, db: Session = Depends(get_db)
-):
-    record = (
-        db.query(Transcription).filter(Transcription.id == transcription_id).first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="レコードが見つかりません")
-    if record.status != "completed":
-        raise HTTPException(
-            status_code=400, detail="文字起こし完了後に操作してください"
-        )
-
-    record.filler_removal_enabled = body.filler_removal_enabled
-    if body.filler_removal_enabled:
-        record.filler_removed = remove_fillers(record.transcript)
-    else:
-        record.filler_removed = None
-
-    db.commit()
-    db.refresh(record)
-    return record
-
-
-@router.get("/transcriptions/{transcription_id}/download")
+@router.get("/transcriptions/{job_id}/download")
 def download_transcription(
-    transcription_id: int,
+    job_id: str,
     format: str = "txt",
-    use_filler_removed: bool = False,
-    db: Session = Depends(get_db),
 ):
     if format not in FORMAT_MAP:
         raise HTTPException(
             status_code=400, detail=f"非対応のフォーマットです: {format}"
         )
 
-    record = (
-        db.query(Transcription).filter(Transcription.id == transcription_id).first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="レコードが見つかりません")
-    if record.status != "completed":
+    status = transcription_status.get(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません")
+    if status != "completed":
         raise HTTPException(
             status_code=400, detail="文字起こし完了後にダウンロードできます"
         )
 
-    text = (
-        record.filler_removed
-        if (use_filler_removed and record.filler_removed)
-        else record.transcript
-    )
+    result = transcription_store.get(job_id)
+    text = result["transcript"]
     media_type, converter = FORMAT_MAP[format]
 
     if format == "json":
-        content = to_json(text, record.filename)
+        content = to_json(text, job_id)
     else:
         content = converter(text)
 
-    filename = f"{record.filename}.{format}"
+    filename = f"transcription_{job_id[:8]}.{format}"
     encoded_filename = quote(filename)
     return Response(
         content=content,

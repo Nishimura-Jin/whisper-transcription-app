@@ -16,7 +16,7 @@ export default function TranscriptResult({ data }) {
       {["txt", "srt", "vtt", "tsv", "json"].map((fmt) => (
         <button
           key={fmt}
-          onClick={() => downloadTranscription(data.id, fmt, data.filler_removal_enabled)}
+          onClick={() => downloadTranscription(data.job_id, fmt)}
           style={{ marginRight: "0.5rem" }}
         >
           {fmt.toUpperCase()}

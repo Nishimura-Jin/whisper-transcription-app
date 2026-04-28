@@ -17,7 +17,7 @@ export default function UploadForm({ onComplete }) {
     setStatus("processing");
 
     const interval = setInterval(async () => {
-        const result = await getTranscription(data.id);
+        const result = await getTranscription(data.job_id);
         if (result.status === "completed" || result.status === "failed") {
             clearInterval(interval);
             setStatus(result.status);

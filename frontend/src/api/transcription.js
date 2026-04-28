@@ -12,28 +12,13 @@ export const uploadAudio = async (file, fillerRemovalEnabled) => {
   return res.json();
 };
 
-export const getTranscription = async (id) => {
-  const res = await fetch(`${BASE_URL}/transcriptions/${id}`);
+export const getTranscription = async (jobId) => {
+  const res = await fetch(`${BASE_URL}/transcriptions/${jobId}`);
   return res.json();
 };
 
-export const getTranscriptions = async () => {
-  const res = await fetch(`${BASE_URL}/transcriptions`);
-  return res.json();
-};
-
-export const downloadTranscription = (id, format, useFillerRemoved = false) => {
+export const downloadTranscription = (jobId, format) => {
   window.open(
-    `${BASE_URL}/transcriptions/${id}/download?format=${format}&use_filler_removed=${useFillerRemoved}`
+    `${BASE_URL}/transcriptions/${jobId}/download?format=${format}`
   );
-};
-
-// フィラー除去ON/OFFを切り替え
-export const toggleFiller = async (id, enabled) => {
-  const res = await fetch(`${BASE_URL}/transcriptions/${id}/filler`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filler_removal_enabled: enabled }),
-  });
-  return res.json();
 };
