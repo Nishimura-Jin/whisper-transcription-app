@@ -1,4 +1,5 @@
 import os
+import uuid
 from urllib.parse import quote
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException, BackgroundTasks
 from fastapi.responses import Response
@@ -20,7 +21,6 @@ FORMAT_MAP = {
     "json": ("application/json", None),
 }
 
-# 処理結果を一時保存する辞書
 transcription_store = {}
 transcription_status = {}
 
@@ -49,8 +49,6 @@ async def upload_audio(
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"非対応の形式です: {ext}")
-
-    import uuid
 
     job_id = str(uuid.uuid4())
     save_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
@@ -82,14 +80,12 @@ def get_transcription(job_id: str):
         "status": status,
         "transcript": result["transcript"] if result else None,
         "segments": result["segments"] if result else None,
+        "speaker_segments": result["speaker_segments"] if result else None,
     }
 
 
 @router.get("/transcriptions/{job_id}/download")
-def download_transcription(
-    job_id: str,
-    format: str = "txt",
-):
+def download_transcription(job_id: str, format: str = "txt"):
     if format not in FORMAT_MAP:
         raise HTTPException(
             status_code=400, detail=f"非対応のフォーマットです: {format}"

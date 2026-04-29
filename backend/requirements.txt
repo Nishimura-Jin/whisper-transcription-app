@@ -4,5 +4,8 @@ python-multipart
 openai-whisper
 python-dotenv
 torch
+pyannote.audio
 pytest
 httpx
+librosa
+soundfile

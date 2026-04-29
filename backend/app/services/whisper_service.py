@@ -1,7 +1,15 @@
 import whisper
 import torch
+import warnings
 import re
+import os
+import soundfile as sf
 from concurrent.futures import ThreadPoolExecutor
+from pyannote.audio import Pipeline
+
+# Warning抑制
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 executor = ThreadPoolExecutor(max_workers=1)
 
@@ -26,26 +34,81 @@ def remove_fillers(text: str) -> str:
     return text.strip()
 
 
-def remove_fillers_from_segments(segments):
-    for segment in segments:
-        segment["text"] = remove_fillers(segment["text"])
-    return segments
+_whisper_model = None
+_diarization_pipeline = None
 
 
-_model = None
-
-
-def get_model():
-    global _model
-    if _model is None:
+def get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[INFO] 使用デバイス: {device}")
-        _model = whisper.load_model("tiny", device=device)
-    return _model
+        print(f"[INFO] Whisper使用デバイス: {device}")
+        _whisper_model = whisper.load_model("tiny", device=device)
+    return _whisper_model
+
+
+def get_diarization_pipeline():
+    global _diarization_pipeline
+    if _diarization_pipeline is None:
+        token = os.getenv("HUGGINGFACE_TOKEN")
+        if token:
+            print(f"[INFO] HFトークン確認OK: {token[:10]}...")
+        else:
+            print("[ERROR] HUGGINGFACE_TOKENが取得できていません")
+            raise ValueError("HUGGINGFACE_TOKEN is not set")
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"[INFO] pyannote使用デバイス: {device}")
+
+        _diarization_pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1",
+            token=token,
+        ).to(device)
+    return _diarization_pipeline
+
+
+def assign_speakers(segments, diarization):
+    # DiarizeOutput.speaker_diarization が Annotation オブジェクト
+    annotation = diarization.speaker_diarization
+
+    result = []
+    for segment in segments:
+        seg_start = segment["start"]
+        seg_end = segment["end"]
+        text = segment["text"].strip()
+
+        speaker = "UNKNOWN"
+        max_overlap = 0
+
+        for turn, _, label in annotation.itertracks(yield_label=True):
+            overlap = min(turn.end, seg_end) - max(turn.start, seg_start)
+            if overlap > max_overlap:
+                max_overlap = overlap
+                speaker = label
+
+        result.append(
+            {
+                "start": seg_start,
+                "end": seg_end,
+                "speaker": speaker,
+                "text": text,
+            }
+        )
+    return result
+
+
+def prepare_audio_for_diarization(file_path: str) -> str:
+    import librosa
+    import tempfile
+
+    y, sr = librosa.load(file_path, sr=16000, mono=True)
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    sf.write(tmp.name, y, 16000)
+    return tmp.name
 
 
 def transcribe_audio(file_path: str, filler_removal_enabled: bool) -> dict:
-    model = get_model()
+    model = get_whisper_model()
     result = model.transcribe(
         file_path,
         language="ja",
@@ -57,9 +120,30 @@ def transcribe_audio(file_path: str, filler_removal_enabled: bool) -> dict:
 
     if filler_removal_enabled:
         transcript = remove_fillers(transcript)
-        segments = remove_fillers_from_segments(segments)
+        for seg in segments:
+            seg["text"] = remove_fillers(seg["text"])
+
+    try:
+        pipeline = get_diarization_pipeline()
+        prepared_path = prepare_audio_for_diarization(file_path)
+        diarization = pipeline(prepared_path)
+        os.unlink(prepared_path)
+        speaker_segments = assign_speakers(segments, diarization)
+        print(f"[INFO] 話者分離成功: {len(speaker_segments)}セグメント")
+    except Exception as e:
+        print(f"[WARNING] 話者分離失敗: {e}")
+        speaker_segments = [
+            {
+                "start": seg["start"],
+                "end": seg["end"],
+                "speaker": "SPEAKER_00",
+                "text": seg["text"],
+            }
+            for seg in segments
+        ]
 
     return {
         "transcript": transcript,
         "segments": segments,
+        "speaker_segments": speaker_segments,
     }
