@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { downloadTranscription } from "../api/transcription";
 
-// 話者ごとのカラーパレット（背景・テキスト・ボーダー）
 const SPEAKER_PALETTE = [
   { bg: "#EFF6FF", border: "#3B82F6", label: "#1D4ED8", dot: "#3B82F6" },
   { bg: "#F0FDF4", border: "#22C55E", label: "#15803D", dot: "#22C55E" },
@@ -21,43 +20,27 @@ export default function TranscriptResult({ data }) {
   const [activeTab, setActiveTab] = useState("speakers");
   const speakerSegments = data.speaker_segments || [];
 
-  // 話者 → パレット index のマッピング
+  const uniqueSpeakers = [...new Set(speakerSegments.map((s) => s.speaker))].sort();
   const speakerMap = {};
-  let speakerCount = 0;
-  speakerSegments.forEach((seg) => {
-    if (!(seg.speaker in speakerMap)) {
-      speakerMap[seg.speaker] = speakerCount % SPEAKER_PALETTE.length;
-      speakerCount++;
-    }
-  });
+  uniqueSpeakers.forEach((sp, i) => { speakerMap[sp] = i % SPEAKER_PALETTE.length; });
 
-  const uniqueSpeakers = Object.keys(speakerMap);
+  const hasSpeakers = speakerSegments.length > 0;
 
   return (
     <div style={styles.wrapper}>
+
       {/* ヘッダー */}
       <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <span style={styles.headerIcon}>🎙️</span>
-          <h2 style={styles.headerTitle}>文字起こし結果</h2>
+        <div>
+          <h2 style={styles.title}>文字起こし結果</h2>
         </div>
-        {speakerSegments.length > 0 && (
+        {hasSpeakers && (
           <div style={styles.speakerBadges}>
             {uniqueSpeakers.map((sp) => {
               const p = SPEAKER_PALETTE[speakerMap[sp]];
               return (
-                <span
-                  key={sp}
-                  style={{
-                    ...styles.speakerBadge,
-                    background: p.bg,
-                    border: `1px solid ${p.border}`,
-                    color: p.label,
-                  }}
-                >
-                  <span
-                    style={{ ...styles.dot, background: p.dot }}
-                  />
+                <span key={sp} style={{ ...styles.speakerBadge, background: p.bg, border: `1px solid ${p.border}`, color: p.label }}>
+                  <span style={{ ...styles.dot, background: p.dot }} />
                   {sp}
                 </span>
               );
@@ -67,60 +50,40 @@ export default function TranscriptResult({ data }) {
       </div>
 
       {/* タブ */}
-      {speakerSegments.length > 0 && (
+      {hasSpeakers && (
         <div style={styles.tabBar}>
-          <button
-            style={activeTab === "speakers" ? styles.tabActive : styles.tab}
-            onClick={() => setActiveTab("speakers")}
-          >
+          <button style={activeTab === "speakers" ? styles.tabActive : styles.tab} onClick={() => setActiveTab("speakers")}>
             話者別
           </button>
-          <button
-            style={activeTab === "full" ? styles.tabActive : styles.tab}
-            onClick={() => setActiveTab("full")}
-          >
+          <button style={activeTab === "full" ? styles.tabActive : styles.tab} onClick={() => setActiveTab("full")}>
             全文
           </button>
         </div>
       )}
 
-      {/* 話者別ビュー */}
-      {(activeTab === "speakers" && speakerSegments.length > 0) ? (
+      {/* 話者別 */}
+      {hasSpeakers && activeTab === "speakers" && (
         <div style={styles.segmentList}>
           {speakerSegments.map((seg, i) => {
             const p = SPEAKER_PALETTE[speakerMap[seg.speaker]];
             return (
-              <div
-                key={i}
-                style={{
-                  ...styles.segment,
-                  borderLeft: `4px solid ${p.border}`,
-                  background: p.bg,
-                }}
-              >
+              <div key={i} style={{ ...styles.segment, borderLeft: `4px solid ${p.border}`, background: p.bg }}>
                 <div style={styles.segmentMeta}>
                   <span style={{ ...styles.speakerLabel, color: p.label }}>
                     <span style={{ ...styles.dot, background: p.dot }} />
                     {seg.speaker}
                   </span>
-                  <span style={styles.timestamp}>
-                    {formatTime(seg.start)} → {formatTime(seg.end)}
-                  </span>
+                  <span style={styles.timestamp}>{formatTime(seg.start)} → {formatTime(seg.end)}</span>
                 </div>
                 <p style={styles.segmentText}>{seg.text}</p>
               </div>
             );
           })}
         </div>
-      ) : (
-        /* 全文ビュー（タブなし or 全文タブ選択時） */
-        <div style={styles.fullText}>
-          <pre style={styles.fullTextPre}>{data.transcript}</pre>
-        </div>
       )}
 
-      {/* 話者分離なしの場合は全文を直接表示 */}
-      {speakerSegments.length === 0 && (
+      {/* 全文 */}
+      {(!hasSpeakers || activeTab === "full") && (
         <div style={styles.fullText}>
           <pre style={styles.fullTextPre}>{data.transcript}</pre>
         </div>
@@ -136,12 +99,14 @@ export default function TranscriptResult({ data }) {
               onClick={() => downloadTranscription(data.job_id, fmt)}
               style={styles.dlBtn}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#1D4ED8";
+                e.currentTarget.style.background = "#2563EB";
                 e.currentTarget.style.color = "#fff";
+                e.currentTarget.style.borderColor = "#2563EB";
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "#fff";
                 e.currentTarget.style.color = "#374151";
+                e.currentTarget.style.borderColor = "#D1D5DB";
               }}
             >
               {fmt.toUpperCase()}
@@ -155,41 +120,32 @@ export default function TranscriptResult({ data }) {
 
 const styles = {
   wrapper: {
-    fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif",
-    maxWidth: "860px",
-    margin: "0 auto",
-    padding: "2rem",
     background: "#fff",
     borderRadius: "12px",
-    boxShadow: "0 2px 16px rgba(0,0,0,0.08)",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.06)",
+    padding: "2rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1.25rem",
   },
   header: {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     flexWrap: "wrap",
     gap: "0.75rem",
-    marginBottom: "1.5rem",
     paddingBottom: "1rem",
-    borderBottom: "2px solid #F3F4F6",
+    borderBottom: "1px solid #F3F4F6",
   },
-  headerLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: "0.5rem",
-  },
-  headerIcon: {
-    fontSize: "1.4rem",
-  },
-  headerTitle: {
+  title: {
     margin: 0,
-    fontSize: "1.25rem",
+    fontSize: "1.05rem",
     fontWeight: "700",
     color: "#111827",
   },
   speakerBadges: {
     display: "flex",
-    gap: "0.5rem",
+    gap: "0.4rem",
     flexWrap: "wrap",
   },
   speakerBadge: {
@@ -198,12 +154,12 @@ const styles = {
     gap: "5px",
     padding: "3px 10px",
     borderRadius: "999px",
-    fontSize: "0.78rem",
+    fontSize: "0.75rem",
     fontWeight: "600",
   },
   dot: {
-    width: "8px",
-    height: "8px",
+    width: "7px",
+    height: "7px",
     borderRadius: "50%",
     display: "inline-block",
     flexShrink: 0,
@@ -211,7 +167,6 @@ const styles = {
   tabBar: {
     display: "flex",
     gap: "0.25rem",
-    marginBottom: "1.25rem",
     background: "#F3F4F6",
     borderRadius: "8px",
     padding: "4px",
@@ -223,10 +178,9 @@ const styles = {
     background: "transparent",
     borderRadius: "6px",
     cursor: "pointer",
-    fontSize: "0.875rem",
+    fontSize: "0.85rem",
     color: "#6B7280",
     fontWeight: "500",
-    transition: "all 0.15s",
   },
   tabActive: {
     padding: "6px 20px",
@@ -234,55 +188,50 @@ const styles = {
     background: "#fff",
     borderRadius: "6px",
     cursor: "pointer",
-    fontSize: "0.875rem",
+    fontSize: "0.85rem",
     color: "#111827",
     fontWeight: "700",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
-    transition: "all 0.15s",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
   },
   segmentList: {
     display: "flex",
     flexDirection: "column",
-    gap: "0.75rem",
-    marginBottom: "1.5rem",
+    gap: "0.6rem",
     maxHeight: "520px",
     overflowY: "auto",
-    paddingRight: "4px",
+    paddingRight: "2px",
   },
   segment: {
     padding: "0.75rem 1rem",
     borderRadius: "8px",
-    transition: "box-shadow 0.15s",
   },
   segmentMeta: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: "0.35rem",
+    marginBottom: "0.3rem",
     flexWrap: "wrap",
     gap: "0.25rem",
   },
   speakerLabel: {
     fontWeight: "700",
-    fontSize: "0.82rem",
+    fontSize: "0.78rem",
     display: "flex",
     alignItems: "center",
     gap: "5px",
   },
   timestamp: {
-    fontSize: "0.75rem",
+    fontSize: "0.72rem",
     color: "#9CA3AF",
-    fontVariantNumeric: "tabular-nums",
     fontFamily: "monospace",
   },
   segmentText: {
     margin: 0,
-    fontSize: "0.95rem",
+    fontSize: "0.92rem",
     color: "#1F2937",
     lineHeight: "1.65",
   },
   fullText: {
-    marginBottom: "1.5rem",
     background: "#F9FAFB",
     border: "1px solid #E5E7EB",
     borderRadius: "8px",
@@ -293,7 +242,7 @@ const styles = {
   fullTextPre: {
     margin: 0,
     whiteSpace: "pre-wrap",
-    fontSize: "0.92rem",
+    fontSize: "0.9rem",
     color: "#374151",
     lineHeight: "1.75",
     fontFamily: "'Noto Sans JP', sans-serif",
@@ -304,11 +253,11 @@ const styles = {
   },
   downloadLabel: {
     margin: "0 0 0.6rem",
-    fontSize: "0.82rem",
-    fontWeight: "600",
-    color: "#6B7280",
+    fontSize: "0.7rem",
+    fontWeight: "700",
+    color: "#9CA3AF",
     textTransform: "uppercase",
-    letterSpacing: "0.05em",
+    letterSpacing: "0.08em",
   },
   downloadButtons: {
     display: "flex",
@@ -322,9 +271,9 @@ const styles = {
     background: "#fff",
     color: "#374151",
     fontWeight: "600",
-    fontSize: "0.82rem",
+    fontSize: "0.8rem",
     cursor: "pointer",
-    transition: "all 0.15s",
     letterSpacing: "0.03em",
+    transition: "all 0.15s",
   },
 };

@@ -25,10 +25,19 @@ transcription_store = {}
 transcription_status = {}
 
 
-def _do_transcribe(job_id: str, file_path: str, filler_removal_enabled: bool):
+def _do_transcribe(
+    job_id: str,
+    file_path: str,
+    filler_removal_enabled: bool,
+    diarization_enabled: bool,  # 追加
+):
     try:
         transcription_status[job_id] = "processing"
-        result = transcribe_audio(file_path, filler_removal_enabled)
+        result = transcribe_audio(
+            file_path,
+            filler_removal_enabled,
+            diarization_enabled,  # 追加
+        )
         transcription_store[job_id] = result
         transcription_status[job_id] = "completed"
         print(f"[SUCCESS] job_id={job_id} completed")
@@ -45,6 +54,7 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     filler_removal_enabled: bool = Form(False),
+    diarization_enabled: bool = Form(False),  # 追加
 ):
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -63,6 +73,7 @@ async def upload_audio(
         job_id=job_id,
         file_path=save_path,
         filler_removal_enabled=filler_removal_enabled,
+        diarization_enabled=diarization_enabled,  # 追加
     )
 
     return {"job_id": job_id, "status": "pending", "filename": file.filename}

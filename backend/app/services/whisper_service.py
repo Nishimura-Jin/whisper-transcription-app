@@ -43,7 +43,7 @@ def get_whisper_model():
     if _whisper_model is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"[INFO] Whisper使用デバイス: {device}")
-        _whisper_model = whisper.load_model("tiny", device=device)
+        _whisper_model = whisper.load_model("small", device=device)
     return _whisper_model
 
 
@@ -68,7 +68,6 @@ def get_diarization_pipeline():
 
 
 def assign_speakers(segments, diarization):
-    # DiarizeOutput.speaker_diarization が Annotation オブジェクト
     annotation = diarization.speaker_diarization
 
     result = []
@@ -107,7 +106,11 @@ def prepare_audio_for_diarization(file_path: str) -> str:
     return tmp.name
 
 
-def transcribe_audio(file_path: str, filler_removal_enabled: bool) -> dict:
+def transcribe_audio(
+    file_path: str,
+    filler_removal_enabled: bool,
+    diarization_enabled: bool = False,  # 追加
+) -> dict:
     model = get_whisper_model()
     result = model.transcribe(
         file_path,
@@ -123,24 +126,21 @@ def transcribe_audio(file_path: str, filler_removal_enabled: bool) -> dict:
         for seg in segments:
             seg["text"] = remove_fillers(seg["text"])
 
-    try:
-        pipeline = get_diarization_pipeline()
-        prepared_path = prepare_audio_for_diarization(file_path)
-        diarization = pipeline(prepared_path)
-        os.unlink(prepared_path)
-        speaker_segments = assign_speakers(segments, diarization)
-        print(f"[INFO] 話者分離成功: {len(speaker_segments)}セグメント")
-    except Exception as e:
-        print(f"[WARNING] 話者分離失敗: {e}")
-        speaker_segments = [
-            {
-                "start": seg["start"],
-                "end": seg["end"],
-                "speaker": "SPEAKER_00",
-                "text": seg["text"],
-            }
-            for seg in segments
-        ]
+    # 話者分離ONのときだけ実行
+    if diarization_enabled:
+        try:
+            pipeline = get_diarization_pipeline()
+            prepared_path = prepare_audio_for_diarization(file_path)
+            diarization = pipeline(prepared_path)
+            os.unlink(prepared_path)
+            speaker_segments = assign_speakers(segments, diarization)
+            print(f"[INFO] 話者分離成功: {len(speaker_segments)}セグメント")
+        except Exception as e:
+            print(f"[WARNING] 話者分離失敗: {e}")
+            speaker_segments = []
+    else:
+        print("[INFO] 話者分離スキップ（diarization_enabled=False）")
+        speaker_segments = []
 
     return {
         "transcript": transcript,
