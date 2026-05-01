@@ -54,12 +54,13 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     filler_removal_enabled: bool = Form(False),
-    diarization_enabled: bool = Form(False),  # 追加
+    diarization_enabled: bool = Form(False),
 ):
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"非対応の形式です: {ext}")
 
+    original_stem = os.path.splitext(file.filename)[0]
     job_id = str(uuid.uuid4())
     save_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
 
@@ -68,12 +69,13 @@ async def upload_audio(
         f.write(content)
 
     transcription_status[job_id] = "pending"
+    transcription_store[job_id] = {"original_stem": original_stem}
     background_tasks.add_task(
         _do_transcribe,
         job_id=job_id,
         file_path=save_path,
         filler_removal_enabled=filler_removal_enabled,
-        diarization_enabled=diarization_enabled,  # 追加
+        diarization_enabled=diarization_enabled,
     )
 
     return {"job_id": job_id, "status": "pending", "filename": file.filename}
@@ -119,7 +121,8 @@ def download_transcription(job_id: str, format: str = "txt"):
     else:
         content = converter(text)
 
-    filename = f"transcription_{job_id[:8]}.{format}"
+    original_stem = result.get("original_stem", f"transcription_{job_id[:8]}")
+    filename = f"{original_stem}.{format}"
     encoded_filename = quote(filename)
     return Response(
         content=content,
