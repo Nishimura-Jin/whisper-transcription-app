@@ -8,6 +8,7 @@ FastAPI + React + Docker で構成し、話者分離・フィラー除去・複�
 ## スクリーンショット
 
 ![文字起こし結果](docs/screenshots/screenshot.png)
+![話者分離結果](docs/screenshots/screenshot2.png)
 
 ## 機能
 
