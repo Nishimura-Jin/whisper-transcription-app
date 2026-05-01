@@ -5,6 +5,10 @@
 OpenAI Whisperを使った音声文字起こしWebアプリ。  
 FastAPI + React + Docker で構成し、話者分離・フィラー除去・複数形式ダウンロードに対応。
 
+## スクリーンショット
+
+![文字起こし結果](docs/screenshots/screenshot.png)
+
 ## 機能
 
 - 音声・動画ファイルのアップロード（mp3 / mp4 / wav / m4a / flac / ogg / webm）
@@ -51,6 +55,10 @@ cp .env.example .env
 HUGGINGFACE_TOKEN=your_token_here
 ```
 
+HuggingFaceトークンは [huggingface.co](https://huggingface.co/settings/tokens) で取得できます。  
+また、以下のモデルへのアクセス許可が必要です：
+- [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+
 ### 起動
 
 ```bash
@@ -63,3 +71,11 @@ docker compose up --build
 
 - フロントエンド: http://localhost:5173
 - APIドキュメント: http://localhost:8000/docs
+
+### 基本的な使い方
+
+1. ブラウザで http://localhost:5173 を開く
+2. 音声・動画ファイルをアップロード
+3. 話者分離を使用する場合はトグルをONにする
+4. 文字起こし完了後、タブ切替で話者ごとの結果を確認
+5. 任意の形式でダウンロード
