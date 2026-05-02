@@ -53,4 +53,6 @@ def test_get_transcription_after_upload(client):
     job_id = upload.json()["job_id"]
     response = client.get(f"/api/transcriptions/{job_id}")
     assert response.status_code == 200
-    assert response.json()["job_id"] == job_id
+    data = response.json()
+    assert data["job_id"] == job_id
+    assert data["status"] in ("pending", "processing", "failed")
