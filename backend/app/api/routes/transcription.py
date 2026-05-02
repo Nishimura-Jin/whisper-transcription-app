@@ -29,16 +29,16 @@ def _do_transcribe(
     job_id: str,
     file_path: str,
     filler_removal_enabled: bool,
-    diarization_enabled: bool,  # 追加
+    diarization_enabled: bool,
 ):
     try:
         transcription_status[job_id] = "processing"
         result = transcribe_audio(
             file_path,
             filler_removal_enabled,
-            diarization_enabled,  # 追加
+            diarization_enabled,
         )
-        transcription_store[job_id] = result
+        transcription_store[job_id].update(result)
         transcription_status[job_id] = "completed"
         print(f"[SUCCESS] job_id={job_id} completed")
     except Exception as e:
@@ -91,9 +91,9 @@ def get_transcription(job_id: str):
     return {
         "job_id": job_id,
         "status": status,
-        "transcript": result["transcript"] if result else None,
-        "segments": result["segments"] if result else None,
-        "speaker_segments": result["speaker_segments"] if result else None,
+        "transcript": result.get("transcript") if result else None,
+        "segments": result.get("segments") if result else None,
+        "speaker_segments": result.get("speaker_segments") if result else None,
     }
 
 
