@@ -43,7 +43,7 @@ def get_whisper_model():
     if _whisper_model is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"[INFO] Whisper使用デバイス: {device}")
-        _whisper_model = whisper.load_model("small", device=device)
+        _whisper_model = whisper.load_model("medium", device=device)
     return _whisper_model
 
 
